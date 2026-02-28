@@ -65,11 +65,16 @@
       font-size: 18px;
     }
   </style>
+  <!-- 引入 jsPsych 库（基于 jsPsych 7，使用浏览器 UMD 版本） -->
+  <link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.0/dist/jspsych.css">
+  <script src="https://unpkg.com/jspsych@7.3.0/dist/index.browser.js"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.2/dist/index.browser.js"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-instructions@1.1.2/dist/index.browser.js"></script>
 </head>
 <body>
   <div id="exp-container"></div>
 
-  <script src="script.js"></script>
+  <script src="pilot.js"></script>
 </body>
 </html>
 
