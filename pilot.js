@@ -225,8 +225,8 @@ timeline.push({
   type: jsPsychInstructions,
   pages: practiceInstructionPagesHtml,
   key_forward: " ",
-  key_backward: false,
   show_clickable_nav: false,
+  // 不允许返回上一页，只能前进
   allow_backward: false
 });
 
