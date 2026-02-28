@@ -309,10 +309,10 @@ const decision_trial = {
     trial_index: jsPsych.timelineVariable("index")
   },
   on_finish: function (data) {
-    // 把 jsPsych 记录的按键与 RT 转为所需格式
+    // jsPsych 7 中 html-keyboard-response 的 response 本身就是按键字符串
     let key = "";
-    if (data.response !== null) {
-      key = jsPsych.pluginAPI.convertKeyCodeToKeyCharacter(data.response).toLowerCase();
+    if (typeof data.response === "string") {
+      key = data.response.toLowerCase();
     }
     data.response_key = key;
 
