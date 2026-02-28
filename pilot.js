@@ -2,7 +2,8 @@
 
 // 集合大小与呈现时间（毫秒）
 const SET_SIZES = [2, 6, 12, 18, 24, 30];
-const DISPLAY_DURATIONS = [500, 800, 1200];
+// 原为 [500, 800, 1200]，按要求改为更难的 [200, 400, 600]
+const DISPLAY_DURATIONS = [200, 400, 600];
 
 // 练习：每种条件重复次数
 const PRACTICE_REPS_PER_COND = 2;    // 一半含目标，一半无目标
@@ -26,7 +27,7 @@ const RECT_SHORT = 40;  // 短边
 const GRID_ROWS = 5;
 const GRID_COLS = 6;
 
-// ====================== 指导语与文本（请自行替换） ======================
+// ====================== 指导语与文本（可按需要修改） ======================
 
 const practiceInstructionPages = [
   "【练习阶段指导语 - 第1页】\n\n在这里填写练习阶段的详细指导语。\n\n按空格键切换到下一页。",
@@ -42,23 +43,7 @@ const blockRestText =
 const endText =
   "【结束语】\n\n所有试次已完成，感谢您的参与！\n实验即将结束，请稍候……";
 
-// ====================== 全局状态 ======================
-
-const container = document.getElementById("exp-container");
-
-let currentKeyHandler = null;
-
-let practiceTrials = [];
-let mainTrials = [];
-let currentPhase = "practice_instructions"; // practice_instructions, practice, main_ready, main, rest, end
-let instructionPageIndex = 0;
-let practiceIndex = 0;
-let mainIndex = 0;
-let mainResults = [];  // 仅正式实验数据
-let decisionTimer = null;
-let decisionStartTime = null;
-
-// ====================== 工具函数 ======================
+// ====================== 工具函数（随机与 trial 生成） ======================
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -99,7 +84,7 @@ function generateTrials(repsPerCond, phase) {
   return trials;
 }
 
-// 为正式实验 trials 标记 block
+// 为正式实验 trials 标记 block 和在整个正式实验中的顺序 index
 function assignBlocksToMainTrials(trials) {
   for (let i = 0; i < trials.length; i++) {
     trials[i].block = Math.floor(i / BLOCK_TRIALS) + 1; // 1,2,3,...
@@ -107,24 +92,7 @@ function assignBlocksToMainTrials(trials) {
   }
 }
 
-// 切换全局按键处理器
-document.addEventListener("keydown", (e) => {
-  if (typeof currentKeyHandler === "function") {
-    currentKeyHandler(e);
-  }
-});
-
-// 清理界面和按键
-function clearScreen() {
-  container.innerHTML = "";
-  currentKeyHandler = null;
-  if (decisionTimer) {
-    clearTimeout(decisionTimer);
-    decisionTimer = null;
-  }
-}
-
-// ====================== 刺激生成 ======================
+// ====================== 刺激生成（与原逻辑保持一致） ======================
 
 // 根据 setSize 和 targetPresent 生成该 trial 的刺激列表
 // 每个刺激对象：{color: 'red'|'green', orientation: 'vertical'|'horizontal'}
@@ -139,7 +107,7 @@ function generateStimuliForTrial(setSize, targetPresent) {
   if (!targetPresent) {
     // 无目标时所有红色均为横向
     for (let i = 0; i < numRed; i++) {
-      stimuli.push({ color: "red", orientation: "horizontal", isTarget: false });
+      stimuli.push({ color: TARGET_COLOR, orientation: "horizontal", isTarget: false });
     }
     // 绿色中横/竖尽量均等
     let greenVert = Math.floor(numGreen / 2);
@@ -152,7 +120,7 @@ function generateStimuliForTrial(setSize, targetPresent) {
     }
   } else {
     // 有目标：先放一个竖向红色目标
-    stimuli.push({ color: "red", orientation: "vertical", isTarget: true });
+    stimuli.push({ color: TARGET_COLOR, orientation: TARGET_ORIENTATION, isTarget: true });
     numRed -= 1; // 剩余红色为干扰，全为横向
 
     if (numRed < 0) {
@@ -162,7 +130,7 @@ function generateStimuliForTrial(setSize, targetPresent) {
 
     // 红色干扰（横向）
     for (let i = 0; i < numRed; i++) {
-      stimuli.push({ color: "red", orientation: "horizontal", isTarget: false });
+      stimuli.push({ color: TARGET_COLOR, orientation: "horizontal", isTarget: false });
     }
 
     // 剩余为绿色
@@ -183,7 +151,7 @@ function generateStimuliForTrial(setSize, targetPresent) {
   return stimuli;
 }
 
-// 根据 GRID_ROWS x GRID_COLS 生成随机不重叠位置
+// 生成随机不重叠位置：在可用区域内完全随机采样坐标，并保证矩形之间不重叠
 function generatePositionsForStimuli(n) {
   const positions = [];
   const w = window.innerWidth;
@@ -193,315 +161,244 @@ function generatePositionsForStimuli(n) {
   const usableW = w * 0.8;
   const usableH = h * 0.8;
 
-  const cellW = usableW / GRID_COLS;
-  const cellH = usableH / GRID_ROWS;
+  // 为了简单起见，用“最大可能尺寸”的外接矩形来做碰撞检测，
+  // 这样无论横放还是竖放都不会互相重叠
+  const halfW = RECT_LONG / 2;
+  const halfH = RECT_LONG / 2;
+  const padding = 10; // 刺激之间再留一点安全距离，避免视觉上太挤
 
-  const cells = [];
-  for (let r = 0; r < GRID_ROWS; r++) {
-    for (let c = 0; c < GRID_COLS; c++) {
-      cells.push({ r, c });
+  const maxAttempts = 5000;
+  let attempts = 0;
+
+  while (positions.length < n && attempts < maxAttempts) {
+    attempts++;
+
+    // 保证整个外接矩形都在可用区域内
+    const x = marginX + halfW + Math.random() * (usableW - 2 * halfW);
+    const y = marginY + halfH + Math.random() * (usableH - 2 * halfH);
+
+    let overlap = false;
+    for (const p of positions) {
+      const dx = Math.abs(p.x - x);
+      const dy = Math.abs(p.y - y);
+      if (dx < RECT_LONG + padding && dy < RECT_LONG + padding) {
+        overlap = true;
+        break;
+      }
+    }
+
+    if (!overlap) {
+      positions.push({ x, y });
     }
   }
-  shuffle(cells);
 
-  const selected = cells.slice(0, n);
-  for (const cell of selected) {
-    const cx = marginX + (cell.c + 0.5) * cellW;
-    const cy = marginY + (cell.r + 0.5) * cellH;
-    positions.push({ x: cx, y: cy });
-  }
+  // 理论上在当前参数下不会触发；若极端情况下采样不够，可退回已有位置数量
   return positions;
 }
 
-// ====================== 各阶段界面与流程 ======================
+// ====================== jsPsych 初始化 ======================
 
-function showPracticeInstructions() {
-  clearScreen();
-  currentPhase = "practice_instructions";
+const jsPsych = initJsPsych({
+  display_element: "exp-container",
+  on_finish: function () {
+    saveMainDataAsCSV();
+  }
+});
 
-  const pageText = practiceInstructionPages[instructionPageIndex];
-  const div = document.createElement("div");
-  div.className = "instruction-text";
-  div.textContent = pageText;
-  container.appendChild(div);
+// 生成练习与正式实验的 trial 条件
+const practiceTrials = generateTrials(PRACTICE_REPS_PER_COND, "practice");
+const mainTrials = generateTrials(MAIN_REPS_PER_COND, "main");
+assignBlocksToMainTrials(mainTrials);
 
-  const prompt = document.createElement("div");
-  prompt.className = "prompt-text";
-  prompt.textContent = "按空格键继续";
-  container.appendChild(prompt);
+let timeline = [];
 
-  currentKeyHandler = (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
-      instructionPageIndex++;
-      if (instructionPageIndex < practiceInstructionPages.length) {
-        showPracticeInstructions();
-      } else {
-        startPractice();
-      }
+// ====================== 练习阶段指导语（instructions 插件） ======================
+
+const practiceInstructionPagesHtml = practiceInstructionPages.map(text => {
+  return `
+    <div class="instruction-text">${text}</div>
+    <div class="prompt-text">按空格键继续</div>
+  `;
+});
+
+timeline.push({
+  type: jsPsychInstructions,
+  pages: practiceInstructionPagesHtml,
+  key_forward: " ",
+  key_backward: false,
+  show_clickable_nav: false,
+  allow_backward: false
+});
+
+// ====================== 基础 trial 模板（注视点 / 刺激 / 判断） ======================
+
+const fixation_trial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: '<div class="fixation">+</div>',
+  choices: "NO_KEYS",
+  trial_duration: function () {
+    return randInt(FIXATION_MIN, FIXATION_MAX);
+  },
+  data: {
+    task: "fixation",
+    phase: jsPsych.timelineVariable("phase")
+  }
+};
+
+const stimulus_trial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: function () {
+    const setSize = jsPsych.timelineVariable("setSize");
+    const targetPresent = jsPsych.timelineVariable("targetPresent");
+    const stimuli = generateStimuliForTrial(setSize, targetPresent);
+    const positions = generatePositionsForStimuli(setSize);
+
+    let html = "";
+    for (let i = 0; i < setSize; i++) {
+      const stim = stimuli[i];
+      const pos = positions[i];
+
+      const isVertical = stim.orientation === "vertical";
+      const width = isVertical ? RECT_SHORT : RECT_LONG;
+      const height = isVertical ? RECT_LONG : RECT_SHORT;
+
+      html += `<div class="stimulus-rect" style="
+        background-color:${stim.color};
+        left:${pos.x}px;
+        top:${pos.y}px;
+        width:${width}px;
+        height:${height}px;
+        transform:translate(-50%, -50%);
+      "></div>`;
     }
-  };
-}
-
-function startPractice() {
-  clearScreen();
-  currentPhase = "practice";
-  practiceIndex = 0;
-  if (practiceTrials.length === 0) {
-    practiceTrials = generateTrials(PRACTICE_REPS_PER_COND, "practice");
+    return html;
+  },
+  choices: "NO_KEYS",
+  trial_duration: function () {
+    return jsPsych.timelineVariable("duration");
+  },
+  data: {
+    task: "display",
+    phase: jsPsych.timelineVariable("phase"),
+    set_size: jsPsych.timelineVariable("setSize"),
+    display_duration: jsPsych.timelineVariable("duration"),
+    target_present: jsPsych.timelineVariable("targetPresent"),
+    block: jsPsych.timelineVariable("block"),
+    trial_index: jsPsych.timelineVariable("index")
   }
-  runNextPracticeTrial();
-}
+};
 
-function runNextPracticeTrial() {
-  if (practiceIndex >= practiceTrials.length) {
-    // 练习结束 -> 正式实验准备界面
-    showMainReadyScreen();
-    return;
-  }
-  const trial = practiceTrials[practiceIndex];
-  runTrial(trial, () => {
-    practiceIndex++;
-    runNextPracticeTrial();
-  });
-}
-
-function showMainReadyScreen() {
-  clearScreen();
-  currentPhase = "main_ready";
-
-  const div = document.createElement("div");
-  div.className = "ready-text";
-  div.textContent = mainReadyText;
-  container.appendChild(div);
-
-  const prompt = document.createElement("div");
-  prompt.className = "prompt-text";
-  prompt.textContent = "按空格键开始正式实验";
-  container.appendChild(prompt);
-
-  currentKeyHandler = (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
-      startMainExperiment();
-    }
-  };
-}
-
-function startMainExperiment() {
-  clearScreen();
-  currentPhase = "main";
-  mainIndex = 0;
-  mainResults = [];
-
-  if (mainTrials.length === 0) {
-    mainTrials = generateTrials(MAIN_REPS_PER_COND, "main");
-    assignBlocksToMainTrials(mainTrials);
-  }
-  runNextMainTrial();
-}
-
-function runNextMainTrial() {
-  if (mainIndex >= mainTrials.length) {
-    showEndScreen();
-    return;
-  }
-
-  const trial = mainTrials[mainIndex];
-  const isBlockStart = (mainIndex % BLOCK_TRIALS === 0) && mainIndex !== 0;
-  if (isBlockStart) {
-    showRestScreen(trial.block);
-  } else {
-    runTrial(trial, () => {
-      mainIndex++;
-      runNextMainTrial();
-    });
-  }
-}
-
-function showRestScreen(blockNumber) {
-  clearScreen();
-  currentPhase = "rest";
-
-  const div = document.createElement("div");
-  div.className = "rest-text";
-  div.textContent = blockRestText + "\n\n当前即将开始第 " + blockNumber + " 个 block。";
-  container.appendChild(div);
-
-  const prompt = document.createElement("div");
-  prompt.className = "prompt-text";
-  prompt.textContent = "按空格键继续";
-  container.appendChild(prompt);
-
-  currentKeyHandler = (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
-      runTrial(mainTrials[mainIndex], () => {
-        mainIndex++;
-        runNextMainTrial();
-      });
-    }
-  };
-}
-
-function showEndScreen() {
-  clearScreen();
-  currentPhase = "end";
-
-  const div = document.createElement("div");
-  div.className = "end-text";
-  div.textContent = endText;
-  container.appendChild(div);
-
-  // 结束时生成并下载 CSV
-  generateAndDownloadCSV();
-
-  setTimeout(() => {
-    // 实验结束后可选择关闭窗口或保持静止
-    // window.close(); // 浏览器通常会拦截
-  }, END_SCREEN_DURATION);
-}
-
-// ====================== 单个试次流程 ======================
-
-function runTrial(trial, onFinish) {
-  // 1. 注视点
-  showFixation(() => {
-    // 2. 刺激呈现
-    showStimuli(trial, () => {
-      // 3. 判断界面
-      showDecisionScreen(trial, onFinish);
-    });
-  });
-}
-
-function showFixation(callback) {
-  clearScreen();
-  const div = document.createElement("div");
-  div.className = "fixation";
-  div.textContent = "+";
-  container.appendChild(div);
-
-  const dur = randInt(FIXATION_MIN, FIXATION_MAX);
-  setTimeout(() => {
-    callback();
-  }, dur);
-}
-
-function showStimuli(trial, callback) {
-  clearScreen();
-
-  const stimuli = generateStimuliForTrial(trial.setSize, trial.targetPresent);
-  const positions = generatePositionsForStimuli(trial.setSize);
-
-  for (let i = 0; i < trial.setSize; i++) {
-    const stim = stimuli[i];
-    const pos = positions[i];
-
-    const div = document.createElement("div");
-    div.className = "stimulus-rect";
-    div.style.backgroundColor = stim.color;
-    div.style.left = pos.x + "px";
-    div.style.top = pos.y + "px";
-    div.style.transform = "translate(-50%, -50%)";
-
-    if (stim.orientation === "vertical") {
-      div.style.width = RECT_SHORT + "px";
-      div.style.height = RECT_LONG + "px";
-    } else {
-      div.style.width = RECT_LONG + "px";
-      div.style.height = RECT_SHORT + "px";
-    }
-
-    container.appendChild(div);
-  }
-
-  // 到时自动进入判断界面
-  setTimeout(() => {
-    callback();
-  }, trial.duration);
-}
-
-function showDecisionScreen(trial, onFinish) {
-  clearScreen();
-
-  const div = document.createElement("div");
-  div.className = "instruction-text";
-  div.textContent =
+const decision_trial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus:
+    '<div class="instruction-text">' +
     "请判断刚才是否出现过目标刺激（竖向红色长方形）。\n\n" +
     "出现过：按 F 键\n" +
     "未出现：按 J 键\n\n" +
-    "请在 3000 毫秒内作答。";
-  container.appendChild(div);
-
-  decisionStartTime = performance.now();
-  let responded = false;
-
-  const handleDecision = (e) => {
-    const key = e.key.toLowerCase();
-    if (key !== KEY_TARGET_PRESENT && key !== KEY_TARGET_ABSENT) {
-      return;
+    "请在 3000 毫秒内作答。" +
+    "</div>",
+  choices: [KEY_TARGET_PRESENT, KEY_TARGET_ABSENT],
+  trial_duration: DECISION_DEADLINE,
+  data: {
+    task: "decision",
+    phase: jsPsych.timelineVariable("phase"),
+    set_size: jsPsych.timelineVariable("setSize"),
+    display_duration: jsPsych.timelineVariable("duration"),
+    target_present: jsPsych.timelineVariable("targetPresent"),
+    block: jsPsych.timelineVariable("block"),
+    trial_index: jsPsych.timelineVariable("index")
+  },
+  on_finish: function (data) {
+    // 把 jsPsych 记录的按键与 RT 转为所需格式
+    let key = "";
+    if (data.response !== null) {
+      key = jsPsych.pluginAPI.convertKeyCodeToKeyCharacter(data.response).toLowerCase();
     }
-    e.preventDefault();
-    if (responded) return;
-    responded = true;
+    data.response_key = key;
 
-    const rt = performance.now() - decisionStartTime;
-    const targetPresent = trial.targetPresent;
-    const correctKey = targetPresent ? KEY_TARGET_PRESENT : KEY_TARGET_ABSENT;
-    const correct = key === correctKey;
+    const targetPresentBool = !!data.target_present;
+    const correctKey = targetPresentBool ? KEY_TARGET_PRESENT : KEY_TARGET_ABSENT;
+    data.correct = key === correctKey ? 1 : 0;
 
-    if (trial.phase === "main") {
-      mainResults.push({
-        trial_index: trial.index,
-        block: trial.block,
-        set_size: trial.setSize,
-        display_duration: trial.duration,
-        target_present: targetPresent ? 1 : 0,
-        response_key: key,
-        correct: correct ? 1 : 0,
-        rt_ms: Math.round(rt)
-      });
+    if (data.rt === null) {
+      data.rt_ms = DECISION_DEADLINE;
+    } else {
+      data.rt_ms = Math.round(data.rt);
     }
+  }
+};
 
-    // 清理并进入下一个 trial
-    currentKeyHandler = null;
-    if (decisionTimer) {
-      clearTimeout(decisionTimer);
-      decisionTimer = null;
-    }
-    onFinish();
+// ====================== 练习阶段（结构与原逻辑一致） ======================
+
+timeline.push({
+  timeline: [fixation_trial, stimulus_trial, decision_trial],
+  timeline_variables: practiceTrials,
+  randomize_order: false
+});
+
+// ====================== 正式实验准备界面 ======================
+
+const mainReadyTrial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus:
+    `<div class="ready-text">${mainReadyText}</div>` +
+    `<div class="prompt-text">按空格键开始正式实验</div>`,
+  choices: [" "]
+};
+
+timeline.push(mainReadyTrial);
+
+// ====================== 正式实验（按 block 分段，中间休息） ======================
+
+function createRestTrial(blockNumber) {
+  return {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus:
+      `<div class="rest-text">${blockRestText}\n\n当前即将开始第 ${blockNumber} 个 block。</div>` +
+      `<div class="prompt-text">按空格键继续</div>`,
+    choices: [" "]
   };
-
-  currentKeyHandler = handleDecision;
-
-  // 超时处理（记为无反应）
-  decisionTimer = setTimeout(() => {
-    if (responded) return;
-    responded = true;
-
-    if (trial.phase === "main") {
-      mainResults.push({
-        trial_index: trial.index,
-        block: trial.block,
-        set_size: trial.setSize,
-        display_duration: trial.duration,
-        target_present: trial.targetPresent ? 1 : 0,
-        response_key: "",
-        correct: 0,
-        rt_ms: DECISION_DEADLINE
-      });
-    }
-
-    currentKeyHandler = null;
-    onFinish();
-  }, DECISION_DEADLINE);
 }
 
-// ====================== CSV 导出 ======================
+const totalBlocks = mainTrials.length > 0
+  ? Math.max(...mainTrials.map(t => t.block))
+  : 0;
 
-function generateAndDownloadCSV() {
-  if (mainResults.length === 0) return;
+for (let b = 1; b <= totalBlocks; b++) {
+  const blockTrials = mainTrials.filter(t => t.block === b);
+  if (blockTrials.length === 0) continue;
+
+  if (b > 1) {
+    timeline.push(createRestTrial(b));
+  }
+
+  timeline.push({
+    timeline: [fixation_trial, stimulus_trial, decision_trial],
+    timeline_variables: blockTrials,
+    randomize_order: false
+  });
+}
+
+// ====================== 结束界面 ======================
+
+const endScreenTrial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: `<div class="end-text">${endText}</div>`,
+  choices: "NO_KEYS",
+  trial_duration: END_SCREEN_DURATION
+};
+
+timeline.push(endScreenTrial);
+
+// ====================== CSV 导出（仅正式实验 decision 试次） ======================
+
+function saveMainDataAsCSV() {
+  const mainDecisionData = jsPsych.data.get().filter({
+    task: "decision",
+    phase: "main"
+  });
+
+  if (mainDecisionData.count() === 0) return;
 
   const header = [
     "trial_index",
@@ -516,17 +413,27 @@ function generateAndDownloadCSV() {
 
   const rows = [header.join(",")];
 
-  mainResults.forEach(r => {
+  mainDecisionData.values().forEach(trial => {
+    const targetPresentNum = trial.target_present ? 1 : 0;
+    const responseKey = trial.response_key || "";
+    const correctNum = typeof trial.correct === "number"
+      ? trial.correct
+      : (trial.correct ? 1 : 0);
+    const rtMs = typeof trial.rt_ms === "number"
+      ? trial.rt_ms
+      : (trial.rt == null ? DECISION_DEADLINE : Math.round(trial.rt));
+
     const row = [
-      r.trial_index,
-      r.block,
-      r.set_size,
-      r.display_duration,
-      r.target_present,
-      r.response_key,
-      r.correct,
-      r.rt_ms
+      trial.trial_index,
+      trial.block,
+      trial.set_size,
+      trial.display_duration,
+      targetPresentNum,
+      responseKey,
+      correctNum,
+      rtMs
     ].join(",");
+
     rows.push(row);
   });
 
@@ -542,12 +449,7 @@ function generateAndDownloadCSV() {
   URL.revokeObjectURL(url);
 }
 
-// ====================== 启动实验 ======================
+// ====================== 运行 jsPsych 时间线 ======================
 
-window.onload = () => {
-  practiceTrials = generateTrials(PRACTICE_REPS_PER_COND, "practice");
-  mainTrials = generateTrials(MAIN_REPS_PER_COND, "main");
-  assignBlocksToMainTrials(mainTrials);
-  showPracticeInstructions();
-};
+jsPsych.run(timeline);
 
