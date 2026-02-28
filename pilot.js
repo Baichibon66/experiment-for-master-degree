@@ -3,12 +3,12 @@
 // 集合大小与呈现时间（毫秒）
 const SET_SIZES = [2, 6, 12, 18, 24, 30];
 // 原为 [500, 800, 1200]，按要求改为更难的 [200, 400, 600]
-const DISPLAY_DURATIONS = [200, 400, 600];
+const DISPLAY_DURATIONS = [100, 150, 200];
 
 // 练习：每种条件重复次数
 const PRACTICE_REPS_PER_COND = 2;    // 一半含目标，一半无目标
 // 正式实验：每种条件重复次数
-const MAIN_REPS_PER_COND = 10;       // 一半含目标，一半无目标
+const MAIN_REPS_PER_COND = 20;       // 一半含目标，一半无目标
 const BLOCK_TRIALS = 60;             // 每个 block 60 个试次
 const FIXATION_MIN = 600;            // ms
 const FIXATION_MAX = 800;            // ms
