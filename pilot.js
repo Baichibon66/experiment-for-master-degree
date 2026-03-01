@@ -3,7 +3,7 @@
 // 集合大小与呈现时间（毫秒）
 const SET_SIZES = [2, 6, 12, 18, 24, 30];
 // 呈现时间（毫秒）
-const DISPLAY_DURATIONS = [200, 400, 600];
+const DISPLAY_DURATIONS = [150, 200];
 
 // 练习：每种条件重复次数
 const PRACTICE_REPS_PER_COND = 2;    // 一半含目标，一半无目标
