@@ -2,8 +2,8 @@
 
 // 集合大小与呈现时间（毫秒）
 const SET_SIZES = [2, 6, 12, 18, 24, 30];
-// 原为 [500, 800, 1200]，按要求改为更难的 [200, 400, 600]
-const DISPLAY_DURATIONS = [100, 150, 200];
+// 呈现时间（毫秒）
+const DISPLAY_DURATIONS = [200, 400, 600];
 
 // 练习：每种条件重复次数
 const PRACTICE_REPS_PER_COND = 2;    // 一半含目标，一半无目标
@@ -14,6 +14,10 @@ const FIXATION_MIN = 600;            // ms
 const FIXATION_MAX = 800;            // ms
 const DECISION_DEADLINE = 3000;      // ms
 const END_SCREEN_DURATION = 3000;    // ms
+
+// mask（干扰界面）参数
+const MASK_COUNT = 30;               // 每次 mask 呈现的长方形数量
+const MASK_DURATION = 120;           // mask 持续时间（毫秒）
 
 // 目标与按键
 const TARGET_COLOR = "red";
@@ -288,6 +292,49 @@ const stimulus_trial = {
   }
 };
 
+// mask（干扰）界面：固定数量的随机颜色/角度长方形，位置随机且不重叠
+const mask_trial = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: function () {
+    const positions = generatePositionsForStimuli(MASK_COUNT);
+
+    let html = "";
+    for (let i = 0; i < MASK_COUNT; i++) {
+      const pos = positions[i];
+
+      // 随机颜色：红或绿
+      let color = Math.random() < 0.5 ? TARGET_COLOR : "green";
+
+      // 随机角度，避免出现“竖向红色长方形”这一目标配置（90° 或 270°）
+      let angle;
+      do {
+        angle = Math.floor(Math.random() * 360);
+      } while (color === TARGET_COLOR && (angle % 180 === 90));
+
+      // 所有 mask 刺激尺寸相同
+      const width = RECT_LONG;
+      const height = RECT_SHORT;
+
+      html += `<div class="stimulus-rect" style="
+        background-color:${color};
+        left:${pos.x}px;
+        top:${pos.y}px;
+        width:${width}px;
+        height:${height}px;
+        transform:translate(-50%, -50%) rotate(${angle}deg);
+      "></div>`;
+    }
+    return html;
+  },
+  choices: "NO_KEYS",
+  trial_duration: MASK_DURATION,
+  data: {
+    task: "mask",
+    phase: jsPsych.timelineVariable("phase"),
+    set_size: MASK_COUNT
+  }
+};
+
 const decision_trial = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus:
@@ -331,7 +378,7 @@ const decision_trial = {
 // ====================== 练习阶段（结构与原逻辑一致） ======================
 
 timeline.push({
-  timeline: [fixation_trial, stimulus_trial, decision_trial],
+  timeline: [fixation_trial, stimulus_trial, mask_trial, decision_trial],
   timeline_variables: practiceTrials,
   randomize_order: false
 });
@@ -373,7 +420,7 @@ for (let b = 1; b <= totalBlocks; b++) {
   }
 
   timeline.push({
-    timeline: [fixation_trial, stimulus_trial, decision_trial],
+    timeline: [fixation_trial, stimulus_trial, mask_trial, decision_trial],
     timeline_variables: blockTrials,
     randomize_order: false
   });
